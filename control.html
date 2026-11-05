@@ -1,0 +1,999 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="scoreboard-server" content="1">
+<title>สกอร์บอร์ด 3x3</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
+<style>
+[hidden]{display:none!important}
+body{margin:0}
+/* Layout: แผงนาฬิกา LED อยู่กลาง ทีม A และ B อยู่สองข้าง; บนมือถือเรียงนาฬิกา > ทีม A > ทีม B และมีแถบสรุปติดบนเมื่อเลื่อนลง */
+:root{
+  --bg:#dfe3e6; --surface:#eef1f2; --surface-2:#e2e6e9; --ink:#14191d; --muted:#56616a; --line:#c2c9ce;
+  --focus:#1f6feb; color-scheme:light;
+  --go-bg:#17703f; --go-fg:#ffffff;
+  --bad-bg:#b3261e; --bad-fg:#ffffff; --bad-ink:#b3261e;
+  --warn-bg:#a85d00; --warn-fg:#ffffff;
+  --panel-bg:#0e1113; --panel-btn:#1b2226; --panel-line:#2b3338; --panel-ink:#e9edef; --panel-mute:#97a3ab;
+  --panel-alert-bg:#2b1512;
+  --led:#ffb020; --led-alert:#ff5a44;
+  --display:'Big Shoulders Display','Impact','Arial Narrow',sans-serif;
+  --body:'IBM Plex Sans Thai','Noto Sans Thai','Sarabun',system-ui,sans-serif;
+  --mono:'Chakra Petch','IBM Plex Sans Thai',ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1214; --surface:#181d20; --surface-2:#21282c; --ink:#e7ebed; --muted:#93a0a9; --line:#2b3338;
+    --focus:#6aa4ff;
+    --go-bg:#4cc38a; --go-fg:#06170e;
+    --bad-bg:#ff6b5e; --bad-fg:#1b0a08; --bad-ink:#ff8a7f;
+    --warn-bg:#f0a030; --warn-fg:#1c1200;
+    --panel-bg:#050607; --panel-btn:#161c1f; --panel-line:#273035;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1214; --surface:#181d20; --surface-2:#21282c; --ink:#e7ebed; --muted:#93a0a9; --line:#2b3338;
+  --focus:#6aa4ff;
+  --go-bg:#4cc38a; --go-fg:#06170e;
+  --bad-bg:#ff6b5e; --bad-fg:#1b0a08; --bad-ink:#ff8a7f;
+  --warn-bg:#f0a030; --warn-fg:#1c1200;
+  --panel-bg:#050607; --panel-btn:#161c1f; --panel-line:#273035;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--ink);
+  font:400 1rem/1.5 var(--body);
+  padding-block:16px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.app{max-width:1180px;margin:0 auto;display:grid;gap:16px}
+
+/* ปุ่มทั่วไป */
+.btn{
+  min-height:44px;padding:0 14px;border-radius:8px;border:1px solid var(--line);
+  background:var(--surface-2);color:var(--ink);font-weight:600;font-size:.92rem;cursor:pointer;
+}
+.btn:hover:not(:disabled){border-color:var(--muted)}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* หัวหน้า */
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}
+h1{margin:0;font:700 1.2rem/1.2 var(--body);display:flex;align-items:baseline;gap:10px}
+.mark{font:900 2.2rem/1 var(--display);letter-spacing:.02em}
+.tools{display:flex;gap:8px;flex-wrap:wrap}
+
+/* โครงหลัก */
+.board{display:grid;gap:16px;grid-template-columns:minmax(0,1fr);grid-template-areas:"clock" "a" "b"}
+#team0{grid-area:a}#team1{grid-area:b}
+@media (min-width:720px){
+  .board{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:"clock clock" "a b"}
+}
+@media (min-width:1060px){
+  .board{grid-template-columns:minmax(0,1fr) minmax(320px,380px) minmax(0,1fr);grid-template-areas:"a clock b";align-items:start}
+}
+
+/* แผงนาฬิกา (LED) */
+.clock{
+  grid-area:clock;align-self:start;background:var(--panel-bg);color:var(--panel-ink);
+  border:1px solid var(--panel-line);border-radius:14px;padding:16px;display:grid;gap:14px;
+}
+@media (min-width:1060px){.clock{position:sticky;top:16px}}
+.cl-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.8rem;color:var(--panel-mute)}
+.state{padding:2px 12px;border-radius:99px;border:1px solid var(--panel-line);white-space:nowrap}
+.state.on{background:var(--go-bg);color:var(--go-fg);border-color:transparent}
+.game{text-align:center;display:grid;gap:2px}
+.lab{font-size:.78rem;color:var(--panel-mute);letter-spacing:.04em}
+.gval{font:700 clamp(4rem,12vw,5.6rem)/1 var(--mono);color:var(--led);font-variant-numeric:tabular-nums}
+.shotrow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;border-top:1px solid var(--panel-line);padding-top:12px}
+.shotctl{display:grid;gap:8px}
+.shotbtns{display:flex;gap:6px;flex-wrap:wrap}
+.sval{font:700 clamp(3.2rem,9vw,4.2rem)/1 var(--mono);color:var(--led);font-variant-numeric:tabular-nums;min-width:2.3ch;text-align:right}
+.sval.low{color:var(--led-alert)}
+.sval.zero{color:var(--led-alert);animation:blink .6s steps(2) infinite}
+@keyframes blink{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.sval.zero{animation:none}}
+
+.pbtn{
+  min-height:38px;padding:0 12px;border-radius:8px;border:1px solid var(--panel-line);
+  background:var(--panel-btn);color:var(--panel-ink);font-weight:600;font-size:.88rem;cursor:pointer;
+}
+.pbtn:hover:not(:disabled){border-color:var(--panel-mute)}
+.pbtn:disabled{opacity:.45;cursor:not-allowed}
+.go{
+  min-height:64px;width:100%;border:0;border-radius:12px;font-weight:700;font-size:1.3rem;cursor:pointer;
+  background:var(--go-bg);color:var(--go-fg);
+}
+.go.running{background:var(--bad-bg);color:var(--bad-fg)}
+.go:disabled{opacity:.5;cursor:not-allowed}
+.adj{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;align-items:center}
+.adj .lab{margin-right:4px}
+
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.seg .pbtn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;min-width:0}
+.seg .pbtn span.nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seg .pbtn[aria-pressed="true"]{border-color:var(--led);color:var(--led)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--c,var(--muted));flex:none}
+.auto{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--panel-mute)}
+.auto input{width:18px;height:18px;accent-color:var(--led)}
+
+.banner{border-radius:10px;padding:10px 12px;background:var(--panel-btn);border:1px solid var(--panel-line);display:grid;gap:6px}
+.banner.foul{border-color:var(--led)}
+.banner.high{border-color:var(--led-alert);background:var(--panel-alert-bg)}
+.banner.final{border-color:var(--go-bg)}
+.banner h2{margin:0;font:600 .95rem/1.4 var(--body)}
+.banner p{margin:0;font-size:.9rem}
+.banner button{justify-self:end}
+.tostrip{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--led);border-radius:10px;padding:8px 12px;font-size:.9rem}
+.tostrip b{font:700 1.4rem/1 var(--mono);color:var(--led);font-variant-numeric:tabular-nums}
+
+/* แผงทีม */
+.team{--team:#2457d6;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;min-width:0}
+.team-head{background:var(--team);color:#fff;padding:12px 14px;display:grid;gap:10px}
+.team-head .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tname{
+  flex:1;min-width:0;width:100%;background:transparent;border:0;border-bottom:2px solid rgba(255,255,255,.45);
+  border-radius:0;padding:2px 0;font:700 1.4rem/1.3 var(--body);color:#fff;
+}
+.tname:focus-visible{outline-color:#fff}
+.chip{font:600 .75rem var(--body);background:#fff;color:#14191d;padding:3px 10px;border-radius:99px;white-space:nowrap}
+.sw{width:28px;height:28px;border-radius:50%;background:var(--c);border:2px solid rgba(255,255,255,.45);padding:0;cursor:pointer}
+.sw[aria-pressed="true"]{border-color:#fff;box-shadow:0 0 0 2px var(--team),0 0 0 4px #fff}
+.swatches{display:flex;gap:10px;flex:1;min-width:0}
+.to{min-height:36px;font-size:.8rem;background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);margin-left:auto}
+.to:hover:not(:disabled){border-color:#fff}
+
+.score{
+  font:900 clamp(5.5rem,13vw,8.5rem)/.95 var(--display);text-align:center;padding:14px 0 6px;
+  font-variant-numeric:tabular-nums;
+}
+.sbtns{display:grid;grid-template-columns:.8fr 1fr 1fr 1fr;gap:8px;padding:0 14px 14px}
+.sb{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:64px;min-width:0;
+  border-radius:10px;border:2px solid var(--team);background:transparent;color:var(--ink);cursor:pointer;
+}
+.sb b{font:800 1.6rem/1 var(--display)}
+.sb small{font-size:.72rem;color:var(--muted)}
+.sb.fg{background:var(--team);color:#fff}
+.sb.fg small{color:rgba(255,255,255,.88)}
+.sb.fix{border-color:var(--line)}
+.sb:hover{filter:brightness(1.08)}
+.sb:active{transform:translateY(1px)}
+
+.sec{padding:14px;border-top:1px solid var(--line);display:grid;gap:10px}
+.fh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.fh .t{font-weight:600}
+.tfnum{font:800 2rem/1 var(--display);font-variant-numeric:tabular-nums}
+.tfstat{font-size:.85rem;color:var(--muted)}
+.tfstat.bonus{color:var(--warn-bg);font-weight:600}
+.tfstat.max{color:var(--bad-ink);font-weight:600}
+.pips{display:grid;grid-template-columns:repeat(10,1fr);gap:3px}
+.pip{height:24px;border-radius:4px;border:1px solid var(--line);display:grid;place-items:center;font:600 .7rem var(--mono);color:var(--muted)}
+.pip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pip.on.bonus{background:var(--warn-bg);color:var(--warn-fg);border-color:var(--warn-bg)}
+.pip.on.max{background:var(--bad-bg);color:var(--bad-fg);border-color:var(--bad-bg)}
+
+.pl-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.pl-h .t{font-weight:600}
+.legend{font-size:.75rem;color:var(--muted)}
+.player{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.pname{grid-column:1;min-width:0;width:100%;background:transparent;border:0;border-bottom:1px dashed var(--line);border-radius:0;padding:4px 0;font-weight:500}
+.pstat{grid-column:1;font:500 .8rem var(--mono);color:var(--muted)}
+.fbs{grid-column:2;grid-row:1 / span 2;display:flex;gap:4px}
+.fb{
+  width:40px;min-height:44px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);
+  font:700 .9rem var(--mono);cursor:pointer;padding:0;
+}
+.fb:hover:not(:disabled){border-color:var(--muted)}
+.fb:active:not(:disabled){transform:translateY(1px)}
+.fb:disabled{opacity:.35;cursor:not-allowed}
+.fb-U{border-color:var(--warn-bg);color:var(--warn-bg)}
+.fb-D{border-color:var(--bad-bg);color:var(--bad-ink)}
+.player.dq .pname{text-decoration:line-through;color:var(--muted)}
+.player.dq .pstat{color:var(--bad-ink)}
+
+/* ด้านล่าง */
+.lower{display:grid;gap:16px}
+@media (min-width:860px){.lower{grid-template-columns:minmax(0,3fr) minmax(0,2fr);align-items:start}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.card h2{margin:0 0 8px;font:600 1rem/1.3 var(--body)}
+.log{list-style:none;margin:0;padding:0;max-height:320px;overflow:auto}
+.log li{display:grid;grid-template-columns:3.6rem auto minmax(0,1fr);gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line);font-size:.92rem}
+.log .tm{font:500 .85rem var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.empty{color:var(--muted);font-size:.92rem;margin:0}
+.rules{margin:0;padding-left:1.1rem;display:grid;gap:4px;font-size:.9rem}
+.note{margin:10px 0 0;font-size:.8rem;color:var(--muted)}
+.keys{font-size:.8rem;color:var(--muted);text-align:center}
+kbd{font:600 .78rem var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;background:var(--surface)}
+
+/* แถบสรุปติดบน */
+.mini{
+  position:fixed;top:0;left:0;right:0;z-index:20;background:var(--panel-bg);color:var(--panel-ink);
+  border-bottom:1px solid var(--panel-line);
+  padding:calc(env(safe-area-inset-top,0px) + 8px) max(16px,env(safe-area-inset-right,0px)) 8px max(16px,env(safe-area-inset-left,0px));
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  transform:translateY(-100%);visibility:hidden;transition:transform .2s,visibility .2s;
+}
+.mini.show{transform:none;visibility:visible}
+@media (prefers-reduced-motion:reduce){.mini{transition:none}}
+.mteam{display:flex;align-items:center;gap:6px;font:800 1.5rem/1 var(--display);font-variant-numeric:tabular-nums}
+.mclock{display:flex;align-items:baseline;gap:8px;font:700 1.35rem/1 var(--mono);color:var(--led);font-variant-numeric:tabular-nums}
+.mclock .ms{font-size:1.05rem}
+.mclock .ms.low{color:var(--led-alert)}
+.mgo{min-width:58px;min-height:40px}
+
+/* ส่งสัญญาณภาพ */
+.out-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.out-h h2{margin:0}
+.srv{display:inline-flex;align-items:center;gap:8px;font-size:.88rem;color:var(--muted)}
+.srv .dot.ok{background:var(--go-bg)}
+.srv .dot.bad{background:var(--bad-bg)}
+.out-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.out-item{display:grid;gap:6px;align-content:start;min-width:0}
+.out-t{font-weight:700}
+.out-d{font-size:.85rem;color:var(--muted)}
+.urlrow{display:flex;gap:8px;align-items:center;min-width:0}
+.urlrow code{flex:1;min-width:0;overflow:auto;white-space:nowrap;font:500 .85rem var(--mono);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:9px 10px}
+.btn.sm{min-height:38px;padding:0 10px;font-size:.85rem;white-space:nowrap}
+.out-ctl{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.out-ctl label{display:flex;gap:6px;align-items:center;font-size:.9rem}
+.out-ctl input{width:18px;height:18px}
+.btn.on-air{background:var(--go-bg);color:var(--go-fg);border-color:transparent}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="top">
+    <h1><span class="mark">3×3</span><span>สกอร์บอร์ด</span></h1>
+    <div class="tools">
+      <button class="btn" id="undoBtn" data-act="undo" type="button">ย้อนกลับ</button>
+      <button class="btn" id="soundBtn" data-act="sound" type="button">เสียงเตือน: เปิด</button>
+      <button class="btn" id="newBtn" data-act="newgame" type="button">เกมใหม่</button>
+    </div>
+  </header>
+
+  <main class="board">
+    <section class="clock" id="clockPanel" aria-label="นาฬิกาเกม">
+      <div class="cl-top">
+        <span id="phaseText">เวลาปกติ</span>
+        <span class="state" id="stateText">หยุดเวลา</span>
+      </div>
+      <div class="game">
+        <span class="lab">เวลาเกม</span>
+        <div class="gval" id="gameVal">10:00</div>
+      </div>
+      <div class="shotrow">
+        <div class="shotctl">
+          <span class="lab">ช็อตคล็อก (12 วินาที)</span>
+          <div class="shotbtns">
+            <button class="pbtn" type="button" data-act="shotreset">รีเซ็ต 12</button>
+            <button class="pbtn" type="button" data-act="adj" data-t="shot" data-d="-1000" aria-label="ลดช็อตคล็อก 1 วินาที">−1</button>
+            <button class="pbtn" type="button" data-act="adj" data-t="shot" data-d="1000" aria-label="เพิ่มช็อตคล็อก 1 วินาที">+1</button>
+          </div>
+        </div>
+        <div class="sval" id="shotVal">12</div>
+      </div>
+      <div class="banner" id="banner" role="status" aria-live="polite" hidden>
+        <h2 id="bTitle"></h2>
+        <p id="bText"></p>
+        <button class="pbtn" type="button" id="bOk" data-act="dismiss">รับทราบ</button>
+      </div>
+      <div class="tostrip" id="toStrip" hidden>
+        <span id="toLabel">เวลานอก</span>
+        <b id="toVal">0:30</b>
+        <button class="pbtn" type="button" data-act="endto">จบเวลานอก</button>
+      </div>
+      <button class="go" id="goBtn" type="button" data-act="toggle">เริ่มเกม</button>
+      <div class="adj" role="group" aria-label="ปรับเวลาเกม">
+        <span class="lab">ปรับเวลาเกม</span>
+        <button class="pbtn" type="button" data-act="adj" data-t="game" data-d="-10000">−10 วิ</button>
+        <button class="pbtn" type="button" data-act="adj" data-t="game" data-d="-1000">−1</button>
+        <button class="pbtn" type="button" data-act="adj" data-t="game" data-d="1000">+1</button>
+        <button class="pbtn" type="button" data-act="adj" data-t="game" data-d="10000">+10 วิ</button>
+      </div>
+      <div class="game" style="gap:6px">
+        <span class="lab">สิทธิ์ครองบอล (กดซ้ำเพื่อล้าง)</span>
+        <div class="seg">
+          <button class="pbtn" type="button" id="posA" data-act="poss" data-team="0" aria-pressed="false"><i class="dot" id="dotA"></i><span class="nm" id="posAName">ทีม A</span></button>
+          <button class="pbtn" type="button" id="posB" data-act="poss" data-team="1" aria-pressed="false"><i class="dot" id="dotB"></i><span class="nm" id="posBName">ทีม B</span></button>
+        </div>
+        <label class="auto"><input type="checkbox" id="auto" checked> สลับบอลอัตโนมัติหลังยิงเข้า (ในเส้น / นอกเส้น)</label>
+      </div>
+    </section>
+
+    <section class="team" id="team0" aria-label="ทีม A"></section>
+    <section class="team" id="team1" aria-label="ทีม B"></section>
+  </main>
+
+  <section class="card out" id="outCard" aria-label="ส่งสัญญาณภาพ">
+    <div class="out-h">
+      <h2>ส่งสัญญาณภาพ</h2>
+      <span class="srv"><i class="dot" id="srvDot"></i><span id="srvText">กำลังตรวจสอบเซิร์ฟเวอร์…</span></span>
+    </div>
+    <div class="out-grid">
+      <div class="out-item">
+        <div class="out-t">OBS Studio</div>
+        <div class="out-d">เพิ่มแหล่งภาพ Browser ตั้งขนาด 1920×1080 แล้วใส่ URL นี้ พื้นหลังโปร่งใสอยู่แล้ว</div>
+        <div class="urlrow"><code id="uObs">-</code><button class="btn sm" type="button" data-act="copy" data-src="uObs">คัดลอก</button></div>
+      </div>
+      <div class="out-item">
+        <div class="out-t">สกอร์บอร์ดสไตล์สนาม</div>
+        <div class="out-d">โอเวอร์เลย์ใหญ่ตรงกลางจอ สกอร์ LED จุด ใช้ได้ทั้ง OBS และ vMix ใส่ชื่อรายการต่อท้ายได้ เช่น ?event=ชื่อรายการ&amp;round=รอบรองชนะเลิศ</div>
+        <div class="urlrow"><code id="uBoard">-</code><button class="btn sm" type="button" data-act="copy" data-src="uBoard">คัดลอก</button></div>
+      </div>
+      <div class="out-item">
+        <div class="out-t">vMix</div>
+        <div class="out-d">Add Input &gt; Web Browser ใช้ URL นี้ หรือใช้ Data Source (XML) กับไตเติลของคุณเอง</div>
+        <div class="urlrow"><code id="uVmix">-</code><button class="btn sm" type="button" data-act="copy" data-src="uVmix">คัดลอก</button></div>
+        <div class="urlrow"><code id="uXml">-</code><button class="btn sm" type="button" data-act="copy" data-src="uXml">คัดลอก</button></div>
+      </div>
+      <div class="out-item">
+        <div class="out-t">จอมอนิเตอร์ / โปรเจกเตอร์</div>
+        <div class="out-d">เปิดบนจอที่สอง กด F เพื่อเต็มจอ</div>
+        <div class="urlrow"><code id="uDisplay">-</code><button class="btn sm" type="button" data-act="copy" data-src="uDisplay">คัดลอก</button></div>
+        <button class="btn" type="button" data-act="opendisplay">เปิดหน้าจอมอนิเตอร์</button>
+        <div class="out-d" id="uLan"></div>
+      </div>
+    </div>
+    <div class="out-ctl">
+      <button class="btn" id="ovBtn" type="button" data-act="ovtoggle">ซ่อนกราฟิกบนภาพ (G)</button>
+      <label><input type="checkbox" id="ovShot"> ช็อตคล็อก</label>
+      <label><input type="checkbox" id="ovFouls"> ฟาวล์ทีม</label>
+      <label><input type="checkbox" id="ovBanner"> แถบแจ้งผลฟาวล์</label>
+    </div>
+    <p class="note" id="vmixText"></p>
+  </section>
+
+  <div class="lower">
+    <section class="card" aria-label="บันทึกเกม">
+      <h2>บันทึกเกม</h2>
+      <ol class="log" id="log"></ol>
+      <p class="empty" id="logEmpty">ยังไม่มีเหตุการณ์ กดเริ่มเกมหรือบันทึกคะแนนเพื่อเริ่มต้น</p>
+    </section>
+    <section class="card" aria-label="กติกาโดยสรุป">
+      <h2>กติกาที่ใช้คำนวณ</h2>
+      <ul class="rules">
+        <li>แข่ง 10 นาที หรือจบทันทีเมื่อทีมใดทำได้ 21 คะแนน</li>
+        <li>ช็อตคล็อก 12 วินาที หมดแล้วเสียบอล</li>
+        <li>ยิงในเส้น 1 คะแนน ยิงนอกเส้น 2 คะแนน ลูกโทษ 1 คะแนน</li>
+        <li>ฟาวล์ทีมที่ 7–9 ได้ 2 ลูกโทษ ตั้งแต่ครั้งที่ 10 ได้ 2 ลูกโทษ และครองบอล</li>
+        <li>อันสปอร์ต (U) 2 ลูกโทษ + บอล, เทคนิคอล (T) 1 ลูกโทษ + บอล (T ไม่นับฟาวล์ทีม)</li>
+        <li>U กับ T รวมกัน 2 ครั้ง หรือ D 1 ครั้ง ผู้เล่นถูกตัดสิทธิ์</li>
+        <li>เสมอเมื่อหมดเวลา ต่อเวลา ทีมแรกที่ทำได้ 2 คะแนนชนะ</li>
+        <li>ทีมละ 1 เวลานอก นาน 30 วินาที</li>
+      </ul>
+      <p class="note">อ้างอิงกติกา FIBA 3x3 ทั่วไป ควรตรวจกับกติกาของรายการที่แข่งอีกครั้ง</p>
+    </section>
+  </div>
+
+  <p class="keys"><kbd>Space</kbd> เริ่ม/หยุดเวลา · <kbd>R</kbd> รีเซ็ตช็อตคล็อก 12 · <kbd>Z</kbd> ย้อนกลับ</p>
+</div>
+
+<div class="mini" id="mini" aria-label="สรุปสกอร์และเวลา">
+  <div class="mteam"><i class="dot" id="mDotA"></i><span id="mScoreA">0</span></div>
+  <div class="mclock"><span id="mGame">10:00</span><span class="ms" id="mShot">12</span></div>
+  <div class="mteam"><span id="mScoreB">0</span><i class="dot" id="mDotB"></i></div>
+  <button class="pbtn mgo" id="mGo" type="button" data-act="toggle">เริ่ม</button>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+var GAME_MS=600000, SHOT_MS=12000, TARGET=21, TO_MS=30000;
+var COLORS=[['#2457d6','น้ำเงิน'],['#d9480f','ส้ม'],['#1b7f4b','เขียว'],['#c92a2a','แดง'],['#6d3fc0','ม่วง'],['#4a5560','เทา']];
+var DEF_NAMES=['ทีม A','ทีม B'];
+var FOUL_NAME={P:'ฟาวล์ปกติ',U:'ฟาวล์อันสปอร์ต',T:'ฟาวล์เทคนิคอล',D:'ฟาวล์ตัดสิทธิ์'};
+var FOUL_KEY={P:'p',U:'u',T:'t',D:'d'};
+var KEY='scoreboard-3x3-v1';
+
+function $(s,r){return (r||document).querySelector(s);}
+function $$(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));}
+
+function mkTeam(name,color){
+  var pl=[];
+  for(var i=0;i<4;i++) pl.push({name:'',p:0,u:0,t:0,d:0});
+  return {name:name,color:color,score:0,timeout:false,players:pl};
+}
+function fresh(){
+  return {
+    teams:[mkTeam(DEF_NAMES[0],COLORS[0][0]),mkTeam(DEF_NAMES[1],COLORS[1][0])],
+    gameMs:GAME_MS, shotMs:SHOT_MS, running:false, poss:null,
+    phase:'regulation', target:TARGET, winner:null,
+    log:[], banner:null, timeout:null, auto:true, sound:true,
+    overlay:{show:true,shot:true,fouls:true,banner:true}
+  };
+}
+function load(){
+  try{
+    var r=localStorage.getItem(KEY); if(!r) return null;
+    var o=JSON.parse(r);
+    if(!o||!Array.isArray(o.teams)||o.teams.length!==2) return null;
+    for(var i=0;i<2;i++){ if(!o.teams[i].players||o.teams[i].players.length!==4) return null; }
+    return o;
+  }catch(e){return null;}
+}
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} schedulePush(); }
+
+var S=load()||fresh();
+S.running=false; S.timeout=null;
+if(typeof S.auto!=='boolean') S.auto=true;
+if(typeof S.sound!=='boolean') S.sound=true;
+if(!S.overlay) S.overlay={show:true,shot:true,fouls:true,banner:true};
+if(!Array.isArray(S.log)) S.log=[];
+var hist=[];
+
+function tn(i){ return S.teams[i].name.trim()||DEF_NAMES[i]; }
+function pn(i,p){ var n=S.teams[i].players[p].name.trim(); return n||(p<3?'ผู้เล่น '+(p+1):'ผู้เล่นสำรอง'); }
+function teamFouls(t){ return t.players.reduce(function(a,p){return a+p.p+p.u+p.d;},0); }
+function isDQ(p){ return p.d>=1||(p.u+p.t)>=2; }
+
+/* ---------- เวลา ---------- */
+function pad2(n){ return (n<10?'0':'')+n; }
+function fmtGame(ms){
+  if(ms>=60000){ var s=Math.ceil(ms/1000); return pad2(Math.floor(s/60))+':'+pad2(s%60); }
+  return (Math.floor(ms/100)/10).toFixed(1);
+}
+function fmtShot(ms){ return ms>5000?String(Math.ceil(ms/1000)):(Math.floor(ms/100)/10).toFixed(1); }
+
+var last=performance.now(), lastSave=0;
+function setRunning(v){ S.running=v; last=performance.now(); }
+
+/* ---------- เสียง ---------- */
+var AC=null;
+function ensureAudio(){
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state==='suspended') AC.resume();
+  }catch(e){}
+}
+function beep(n,freq,dur){
+  if(!S.sound) return;
+  try{
+    ensureAudio(); if(!AC) return;
+    for(var k=0;k<n;k++){
+      var o=AC.createOscillator(), g=AC.createGain();
+      var t0=AC.currentTime+k*(dur+0.12);
+      o.type='square'; o.frequency.value=freq;
+      g.gain.setValueAtTime(0.0001,t0);
+      g.gain.exponentialRampToValueAtTime(0.22,t0+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+      o.connect(g); g.connect(AC.destination);
+      o.start(t0); o.stop(t0+dur+0.02);
+    }
+  }catch(e){}
+}
+
+/* ---------- ย้อนกลับ ---------- */
+function snap(){
+  hist.push(JSON.stringify({
+    teams:S.teams.map(function(t){return {score:t.score,timeout:t.timeout,players:t.players};}),
+    poss:S.poss,phase:S.phase,target:S.target,winner:S.winner,log:S.log,banner:S.banner,shotMs:S.shotMs
+  }));
+  if(hist.length>80) hist.shift();
+}
+function undo(){
+  var h=hist.pop(); if(!h) return;
+  var o=JSON.parse(h);
+  o.teams.forEach(function(t,i){ S.teams[i].score=t.score; S.teams[i].timeout=t.timeout; S.teams[i].players=t.players; });
+  S.poss=o.poss; S.phase=o.phase; S.target=o.target; S.winner=o.winner; S.log=o.log; S.banner=o.banner; S.shotMs=o.shotMs;
+  S.timeout=null; setRunning(false);
+  update(); save();
+}
+
+function addLog(team,text){
+  S.log.unshift({t:Math.round(S.gameMs),ot:S.phase==='overtime',team:team,text:text});
+  if(S.log.length>300) S.log.length=300;
+}
+function scoreText(){ return S.teams[0].score+'–'+S.teams[1].score; }
+
+/* ---------- การกระทำ ---------- */
+function toggle(){
+  ensureAudio();
+  if(S.phase==='final') return;
+  if(S.phase==='tied'){ startOT(); return; }
+  if(S.running){ setRunning(false); update(); save(); return; }
+  if(S.phase==='regulation'&&S.gameMs<=0) return;
+  if(S.shotMs<=0) S.shotMs=SHOT_MS;
+  if(S.banner&&S.banner.kind!=='final') S.banner=null;
+  S.timeout=null;
+  setRunning(true); update(); save();
+}
+function startOT(){
+  snap();
+  S.phase='overtime';
+  S.target=Math.max(S.teams[0].score,S.teams[1].score)+2;
+  S.shotMs=SHOT_MS; S.timeout=null;
+  S.banner={kind:'info',title:'ต่อเวลา',text:'ทีมแรกที่ทำได้ '+S.target+' คะแนนชนะ (ทำเพิ่ม 2 คะแนน) กดเริ่มเวลาเมื่อพร้อม'};
+  addLog(null,'เริ่มต่อเวลา · ทีมแรกถึง '+S.target+' คะแนนชนะ');
+  update(); save();
+}
+function finish(w){
+  S.phase='final'; S.winner=w; setRunning(false); S.timeout=null;
+  S.banner={kind:'final',title:'จบเกม',text:tn(w)+' ชนะ '+scoreText()};
+  addLog(w,'จบเกม · '+tn(w)+' ชนะ '+scoreText());
+  beep(3,660,0.4);
+}
+function checkWin(){
+  var a=S.teams[0].score, b=S.teams[1].score, w=null;
+  if(S.phase==='regulation'){ if(a>=TARGET) w=0; else if(b>=TARGET) w=1; }
+  else if(S.phase==='overtime'){ if(a>=S.target) w=0; else if(b>=S.target) w=1; }
+  if(w!==null) finish(w);
+}
+function score(i,kind){
+  if(S.phase==='final'||S.phase==='tied') return;
+  var pts={fix:-1,ft:1,'in':1,out:2}[kind];
+  var t=S.teams[i];
+  if(pts<0&&t.score<=0) return;
+  snap();
+  t.score+=pts;
+  var label={fix:'แก้คะแนน −1',ft:'ลูกโทษ +1','in':'ยิงในเส้น +1',out:'ยิงนอกเส้น +2'}[kind];
+  if(kind==='in'||kind==='out'){
+    S.shotMs=SHOT_MS;
+    if(S.auto) S.poss=1-i;
+    setRunning(false);
+    if(S.banner&&S.banner.kind!=='final') S.banner=null;
+  }
+  addLog(i,label+' · '+tn(i)+' ('+scoreText()+')');
+  checkWin();
+  update(); save();
+}
+function foul(i,pl,k){
+  if(S.phase==='final'||S.phase==='tied') return;
+  var t=S.teams[i], p=t.players[pl];
+  if(isDQ(p)) return;
+  snap();
+  p[FOUL_KEY[k]]++;
+  var tf=teamFouls(t), opp=tn(1-i), who=pn(i,pl);
+  setRunning(false);
+  var text, high=false, takeBall=false;
+  if(k==='P'){
+    if(tf>=10){ text=opp+' ได้ 2 ลูกโทษ และครองบอล (ฟาวล์ทีมที่ '+tf+')'; high=true; takeBall=true; }
+    else if(tf>=7){ text=opp+' ได้ 2 ลูกโทษ (ฟาวล์ทีมที่ '+tf+')'; high=true; }
+    else { text=opp+' ได้บอลเข้าเล่น · ถ้าถูกฟาวล์ขณะยิง ยิงในเส้น 1 ลูกโทษ ยิงนอกเส้น 2 ลูกโทษ (ฟาวล์ทีมที่ '+tf+')'; }
+  } else if(k==='U'){ text=opp+' ได้ 2 ลูกโทษ และครองบอล'; high=true; takeBall=true; }
+  else if(k==='T'){ text=opp+' ได้ 1 ลูกโทษ และครองบอล'; takeBall=true; }
+  else { text=opp+' ได้ 3 ลูกโทษ และครองบอล'; high=true; takeBall=true; }
+  if(takeBall) S.poss=1-i;
+  var dq=isDQ(p);
+  if(dq) text+=' · '+who+' ถูกตัดสิทธิ์ ต้องออกจากเกม';
+  S.banner={kind:'foul',high:high,title:FOUL_NAME[k]+' · '+who+' ('+tn(i)+')',text:text};
+  addLog(i,FOUL_NAME[k]+' · '+who+(k==='T'?'':' · ฟาวล์ทีม '+tf));
+  if(dq) addLog(i,who+' ถูกตัดสิทธิ์');
+  update(); save();
+}
+function useTimeout(i){
+  if(S.teams[i].timeout||S.phase==='final'||S.phase==='tied') return;
+  snap();
+  S.teams[i].timeout=true;
+  setRunning(false);
+  S.timeout={team:i,ms:TO_MS};
+  addLog(i,'ขอเวลานอก · '+tn(i));
+  update(); save();
+}
+function setPoss(i){
+  snap();
+  S.poss=(S.poss===i)?null:i;
+  update(); save();
+}
+function adj(target,d){
+  if(S.phase==='final') return;
+  if(target==='game'){
+    if(S.phase!=='regulation') return;
+    S.gameMs=Math.min(5999000,Math.max(0,S.gameMs+d));
+  } else {
+    S.shotMs=Math.min(SHOT_MS,Math.max(0,S.shotMs+d));
+  }
+  paintClocks(); update(); save();
+}
+function shotReset(){
+  if(S.phase==='final') return;
+  S.shotMs=SHOT_MS; paintClocks(); update(); save();
+}
+function endRegulation(){
+  snap();
+  setRunning(false); S.gameMs=0;
+  addLog(null,'หมดเวลา · '+scoreText());
+  var a=S.teams[0].score, b=S.teams[1].score;
+  if(a!==b){ finish(a>b?0:1); }
+  else {
+    S.phase='tied';
+    S.banner={kind:'foul',high:true,title:'หมดเวลา คะแนนเสมอ '+scoreText(),text:'ต้องต่อเวลา กดปุ่มเริ่มต่อเวลา ทีมแรกที่ทำได้ 2 คะแนนชนะ'};
+    beep(3,660,0.4);
+  }
+  update(); save();
+}
+function shotViolation(){
+  snap();
+  setRunning(false); S.shotMs=0;
+  var old=S.poss;
+  addLog(old,'ช็อตคล็อกหมด (12 วินาที)'+(old!==null?' · '+tn(old):''));
+  if(S.poss!==null) S.poss=1-S.poss;
+  S.banner={kind:'foul',high:false,title:'ช็อตคล็อกหมด (12 วินาที)',text:S.poss!==null?'ผิดกติกา ส่งบอลให้ '+tn(S.poss):'ผิดกติกา ส่งบอลให้ทีมตรงข้าม แล้วระบุสิทธิ์ครองบอล'};
+  beep(1,520,0.9);
+  update(); save();
+}
+function newGame(){
+  var keep=S.teams.map(function(t){return {name:t.name,color:t.color,pl:t.players.map(function(p){return p.name;})};});
+  var auto=S.auto, sound=S.sound, ov=S.overlay;
+  S=fresh(); S.auto=auto; S.sound=sound; S.overlay=ov;
+  keep.forEach(function(k,i){
+    S.teams[i].name=k.name; S.teams[i].color=k.color;
+    k.pl.forEach(function(n,pi){ S.teams[i].players[pi].name=n; });
+  });
+  hist.length=0; setRunning(false);
+  syncInputs(); update(); save();
+}
+
+/* ---------- สร้างหน้า ---------- */
+function teamHTML(i){
+  var sw=COLORS.map(function(c){
+    return '<button class="sw" type="button" data-act="color" data-team="'+i+'" data-c="'+c[0]+'" style="--c:'+c[0]+'" aria-label="สี'+c[1]+'" aria-pressed="false"></button>';
+  }).join('');
+  var pips=''; for(var n=1;n<=10;n++) pips+='<span class="pip">'+n+'</span>';
+  var rows='';
+  for(var p=0;p<4;p++){
+    var btns=['P','U','T','D'].map(function(k){
+      return '<button class="fb fb-'+k+'" type="button" data-act="foul" data-team="'+i+'" data-pl="'+p+'" data-k="'+k+'" title="'+FOUL_NAME[k]+'" aria-label="'+FOUL_NAME[k]+' ผู้เล่น '+(p+1)+'">'+k+'</button>';
+    }).join('');
+    rows+='<div class="player" id="pl'+i+'-'+p+'">'+
+      '<input class="pname" id="pn'+i+'-'+p+'" data-team="'+i+'" data-pl="'+p+'" placeholder="'+(p<3?'ผู้เล่น '+(p+1):'ผู้เล่นสำรอง')+'" maxlength="14" autocomplete="off" aria-label="ชื่อผู้เล่น '+(p+1)+' ทีม '+(i?'B':'A')+'">'+
+      '<div class="pstat" id="ps'+i+'-'+p+'"></div>'+
+      '<div class="fbs" role="group" aria-label="บันทึกฟาวล์ผู้เล่น '+(p+1)+'">'+btns+'</div></div>';
+  }
+  return ''+
+  '<div class="team-head">'+
+    '<div class="row"><input class="tname" id="tname'+i+'" data-team="'+i+'" maxlength="18" autocomplete="off" aria-label="ชื่อทีม '+(i?'B':'A')+'"><span class="chip" id="chip'+i+'" hidden>ครองบอล</span></div>'+
+    '<div class="row"><div class="swatches" role="group" aria-label="สีทีม">'+sw+'</div>'+
+    '<button class="btn to" type="button" id="to'+i+'" data-act="timeout" data-team="'+i+'">ขอเวลานอก (1)</button></div>'+
+  '</div>'+
+  '<div class="score" id="score'+i+'" aria-live="polite">0</div>'+
+  '<div class="sbtns">'+
+    '<button class="sb fix" type="button" data-act="score" data-team="'+i+'" data-k="fix" aria-label="แก้คะแนนลบ 1"><b>−1</b><small>แก้ไข</small></button>'+
+    '<button class="sb" type="button" data-act="score" data-team="'+i+'" data-k="ft"><b>+1</b><small>ลูกโทษ</small></button>'+
+    '<button class="sb fg" type="button" data-act="score" data-team="'+i+'" data-k="in"><b>+1</b><small>ในเส้น</small></button>'+
+    '<button class="sb fg" type="button" data-act="score" data-team="'+i+'" data-k="out"><b>+2</b><small>นอกเส้น</small></button>'+
+  '</div>'+
+  '<div class="sec">'+
+    '<div class="fh"><span class="t">ฟาวล์ทีม</span><b class="tfnum" id="tf'+i+'">0</b><span class="tfstat" id="tfs'+i+'"></span></div>'+
+    '<div class="pips" aria-hidden="true">'+pips+'</div>'+
+  '</div>'+
+  '<div class="sec">'+
+    '<div class="pl-h"><span class="t">ผู้เล่น</span><span class="legend">P ปกติ · U อันสปอร์ต · T เทคนิคอล · D ตัดสิทธิ์</span></div>'+
+    '<div>'+rows+'</div>'+
+  '</div>';
+}
+function build(){
+  $('#team0').innerHTML=teamHTML(0);
+  $('#team1').innerHTML=teamHTML(1);
+}
+function syncInputs(){
+  S.teams.forEach(function(t,i){
+    $('#tname'+i).value=t.name;
+    t.players.forEach(function(p,pi){ $('#pn'+i+'-'+pi).value=p.name; });
+  });
+  $('#auto').checked=S.auto;
+  $('#ovShot').checked=S.overlay.shot;
+  $('#ovFouls').checked=S.overlay.fouls;
+  $('#ovBanner').checked=S.overlay.banner;
+}
+
+/* ---------- วาดหน้า ---------- */
+function tfStatus(tf){
+  if(tf>=10) return ['max','ฟาวล์ปกติทุกครั้ง = 2 ลูกโทษ + ครองบอล'];
+  if(tf>=7) return ['bonus','โบนัส: ฟาวล์ปกติ = 2 ลูกโทษ'+(tf+1>=10?' + ครองบอล':'')];
+  if(tf===6) return ['','ฟาวล์ปกติครั้งถัดไป = โบนัส (2 ลูกโทษ)'];
+  return ['','อีก '+(7-tf)+' ฟาวล์ถึงโบนัส'];
+}
+function update(){
+  S.teams.forEach(function(t,i){
+    var root=$('#team'+i);
+    root.style.setProperty('--team',t.color);
+    $('#score'+i).textContent=t.score;
+    $('#chip'+i).hidden=(S.poss!==i);
+    var to=$('#to'+i);
+    to.disabled=t.timeout||S.phase==='final'||S.phase==='tied';
+    to.textContent=t.timeout?'ใช้เวลานอกแล้ว':'ขอเวลานอก (1)';
+    $$('.sw',root).forEach(function(b){ b.setAttribute('aria-pressed',String(b.dataset.c===t.color)); });
+    var tf=teamFouls(t);
+    $('#tf'+i).textContent=tf;
+    var st=tfStatus(tf), el=$('#tfs'+i);
+    el.textContent=st[1]; el.className='tfstat '+st[0];
+    $$('.pip',root).forEach(function(p,n){
+      p.classList.toggle('on',n<tf);
+      p.classList.toggle('bonus',n>=6&&n<9);
+      p.classList.toggle('max',n>=9);
+    });
+    var locked=(S.phase==='final'||S.phase==='tied');
+    $$('.sb',root).forEach(function(b){ b.disabled=locked; });
+    t.players.forEach(function(p,pi){
+      var row=$('#pl'+i+'-'+pi), dq=isDQ(p), parts=[];
+      if(p.p) parts.push('P'+p.p);
+      if(p.u) parts.push('U'+p.u);
+      if(p.t) parts.push('T'+p.t);
+      if(p.d) parts.push('D'+p.d);
+      row.classList.toggle('dq',dq);
+      $('#ps'+i+'-'+pi).textContent=dq?('ถูกตัดสิทธิ์ · '+parts.join(' ')):(parts.length?parts.join('  '):'ยังไม่มีฟาวล์');
+      $$('.fb',row).forEach(function(b){ b.disabled=dq||locked; });
+    });
+  });
+  labels();
+  $('#posA').setAttribute('aria-pressed',String(S.poss===0));
+  $('#posB').setAttribute('aria-pressed',String(S.poss===1));
+  $('#dotA').style.setProperty('--c',S.teams[0].color);
+  $('#dotB').style.setProperty('--c',S.teams[1].color);
+  $('#mDotA').style.setProperty('--c',S.teams[0].color);
+  $('#mDotB').style.setProperty('--c',S.teams[1].color);
+  $('#mScoreA').textContent=S.teams[0].score;
+  $('#mScoreB').textContent=S.teams[1].score;
+  $('#undoBtn').disabled=hist.length===0;
+  $('#soundBtn').textContent='เสียงเตือน: '+(S.sound?'เปิด':'ปิด');
+  paintBanner();
+  paintLog();
+  paintClocks();
+  paintOutput();
+}
+function labels(){
+  $('#posAName').textContent=tn(0);
+  $('#posBName').textContent=tn(1);
+  $('#team0').setAttribute('aria-label',tn(0));
+  $('#team1').setAttribute('aria-label',tn(1));
+}
+function phaseLabel(){
+  if(S.phase==='regulation') return 'เวลาปกติ · ถึง '+TARGET+' คะแนนชนะ';
+  if(S.phase==='tied') return 'เสมอ · รอต่อเวลา';
+  if(S.phase==='overtime') return 'ต่อเวลา · ทีมแรกถึง '+S.target+' ชนะ';
+  return 'จบเกม';
+}
+function paintClocks(){
+  var g=(S.phase==='overtime')?'OT':fmtGame(S.gameMs);
+  $('#gameVal').textContent=g;
+  $('#mGame').textContent=g;
+  var sv=$('#shotVal'), sh=fmtShot(S.shotMs);
+  sv.textContent=sh; $('#mShot').textContent=sh;
+  sv.className='sval'+(S.shotMs<=0?' zero':(S.shotMs<=5000?' low':''));
+  $('#mShot').className='ms'+(S.shotMs<=5000?' low':'');
+  $('#phaseText').textContent=phaseLabel();
+  var st=$('#stateText');
+  st.textContent=S.running?'เวลาเดิน':'หยุดเวลา';
+  st.className='state'+(S.running?' on':'');
+  var go=$('#goBtn'), mg=$('#mGo'), label, mlabel;
+  go.className='go'+(S.running?' running':'');
+  if(S.phase==='final'){ label='จบเกมแล้ว'; mlabel='จบ'; go.disabled=true; mg.disabled=true; }
+  else if(S.phase==='tied'){ label='เริ่มต่อเวลา'; mlabel='OT'; go.disabled=false; mg.disabled=false; }
+  else {
+    var atStart=(S.phase==='regulation'&&S.gameMs>=GAME_MS&&S.teams[0].score===0&&S.teams[1].score===0&&S.log.length===0);
+    label=S.running?'หยุดเวลา':(atStart?'เริ่มเกม':'เริ่มเวลา');
+    mlabel=S.running?'หยุด':'เริ่ม';
+    var blocked=(!S.running&&S.phase==='regulation'&&S.gameMs<=0);
+    go.disabled=blocked; mg.disabled=blocked;
+  }
+  go.textContent=label; mg.textContent=mlabel;
+  var ts=$('#toStrip');
+  if(S.timeout){
+    ts.hidden=false;
+    $('#toLabel').textContent='เวลานอก · '+tn(S.timeout.team);
+    $('#toVal').textContent=Math.max(0,Math.ceil(S.timeout.ms/1000))+' วิ';
+  } else ts.hidden=true;
+}
+function paintBanner(){
+  var b=$('#banner'), B=S.banner;
+  if(!B){ b.hidden=true; return; }
+  b.hidden=false;
+  b.className='banner '+(B.kind||'')+(B.high?' high':'');
+  $('#bTitle').textContent=B.title;
+  $('#bText').textContent=B.text||'';
+  $('#bOk').textContent=(B.kind==='final')?'ปิด':'รับทราบ';
+}
+function paintLog(){
+  var ol=$('#log'); ol.textContent='';
+  $('#logEmpty').hidden=S.log.length>0;
+  S.log.slice(0,80).forEach(function(e){
+    var li=document.createElement('li');
+    var tm=document.createElement('span'); tm.className='tm'; tm.textContent=e.ot?'OT':fmtGame(e.t);
+    var dot=document.createElement('i'); dot.className='dot';
+    if(e.team!==null&&e.team!==undefined&&S.teams[e.team]) dot.style.setProperty('--c',S.teams[e.team].color);
+    var tx=document.createElement('span'); tx.textContent=e.text;
+    li.appendChild(tm); li.appendChild(dot); li.appendChild(tx);
+    ol.appendChild(li);
+  });
+}
+
+/* ---------- เหตุการณ์ ---------- */
+var ngTimer=null;
+function disarm(btn){ delete btn.dataset.armed; btn.textContent='เกมใหม่'; }
+document.addEventListener('click',function(e){
+  var b=e.target.closest('[data-act]'); if(!b||b.disabled) return;
+  var a=b.dataset.act, i=+b.dataset.team;
+  if(e.detail>0&&b.blur) b.blur();
+  if(a==='toggle') toggle();
+  else if(a==='score') score(i,b.dataset.k);
+  else if(a==='foul') foul(i,+b.dataset.pl,b.dataset.k);
+  else if(a==='timeout') useTimeout(i);
+  else if(a==='endto'){ S.timeout=null; update(); save(); }
+  else if(a==='poss') setPoss(i);
+  else if(a==='adj') adj(b.dataset.t,+b.dataset.d);
+  else if(a==='shotreset') shotReset();
+  else if(a==='dismiss'){ S.banner=null; update(); save(); }
+  else if(a==='undo') undo();
+  else if(a==='color'){ S.teams[i].color=b.dataset.c; update(); save(); }
+  else if(a==='sound'){ S.sound=!S.sound; if(S.sound) beep(1,880,0.15); update(); save(); }
+  else if(a==='opendisplay') window.open('/display','scoreboard-display');
+  else if(a==='copy') copyText(b);
+  else if(a==='ovtoggle') toggleGraphic();
+  else if(a==='newgame'){
+    if(!b.dataset.armed){
+      b.dataset.armed='1'; b.textContent='กดอีกครั้งเพื่อเริ่มเกมใหม่';
+      clearTimeout(ngTimer); ngTimer=setTimeout(function(){ disarm(b); },4000);
+    } else { clearTimeout(ngTimer); disarm(b); newGame(); }
+  }
+});
+document.addEventListener('input',function(e){
+  var el=e.target;
+  if(el.classList.contains('tname')){ S.teams[+el.dataset.team].name=el.value; labels(); save(); }
+  else if(el.classList.contains('pname')){ S.teams[+el.dataset.team].players[+el.dataset.pl].name=el.value; save(); }
+  else if(el.id==='auto'){ S.auto=el.checked; save(); }
+});
+function inField(el){ return el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.tagName==='SELECT'); }
+document.addEventListener('keydown',function(e){
+  if(inField(e.target)||e.ctrlKey||e.metaKey||e.altKey) return;
+  if(e.code==='Space'){ e.preventDefault(); if(!e.repeat) toggle(); }
+  else if(e.key==='r'||e.key==='R'){ shotReset(); }
+  else if(e.key==='z'||e.key==='Z'){ undo(); }
+  else if(e.key==='g'||e.key==='G'){ toggleGraphic(); }
+});
+document.addEventListener('keyup',function(e){ if(e.code==='Space'&&!inField(e.target)) e.preventDefault(); });
+document.addEventListener('visibilitychange',function(){ if(document.hidden) save(); });
+
+/* ---------- นาฬิกา ---------- */
+function tick(){
+  var now=performance.now(), dt=now-last; last=now;
+  var changed=false;
+  if(S.timeout){
+    S.timeout.ms-=dt; changed=true;
+    if(S.timeout.ms<=0){
+      S.timeout=null; beep(2,740,0.3);
+      S.banner={kind:'info',title:'หมดเวลานอก',text:'เรียกทีมกลับเข้าสนาม พร้อมเล่นต่อ'};
+      update();
+    }
+  }
+  if(S.running){
+    if(S.phase==='regulation') S.gameMs=Math.max(0,S.gameMs-dt);
+    S.shotMs=Math.max(0,S.shotMs-dt);
+    changed=true;
+    if(S.phase==='regulation'&&S.gameMs<=0) endRegulation();
+    else if(S.shotMs<=0) shotViolation();
+    if(now-lastSave>3000){ save(); lastSave=now; }
+  }
+  if(changed) paintClocks();
+}
+
+/* ---------- ส่งสัญญาณ ---------- */
+var HAS_SERVER=!!document.querySelector('meta[name="scoreboard-server"]')&&/^https?:$/.test(location.protocol);
+var pushTimer=null, srvOK=false, health=null;
+function publicState(){
+  return {
+    v:1, sentAt:Date.now(),
+    teams:S.teams.map(function(t,i){
+      return {
+        name:tn(i), color:t.color, score:t.score, fouls:teamFouls(t), timeout:t.timeout,
+        players:t.players.map(function(p,pi){ return {name:pn(i,pi),p:p.p,u:p.u,t:p.t,d:p.d,dq:isDQ(p)}; })
+      };
+    }),
+    gameMs:Math.round(S.gameMs), shotMs:Math.round(S.shotMs), running:S.running,
+    phase:S.phase, target:S.target, winner:S.winner, poss:S.poss,
+    banner:S.banner?{kind:S.banner.kind,high:!!S.banner.high,title:S.banner.title,text:S.banner.text||''}:null,
+    timeout:S.timeout?{team:S.timeout.team,ms:Math.round(S.timeout.ms)}:null,
+    overlay:S.overlay
+  };
+}
+function schedulePush(){
+  if(!HAS_SERVER) return;
+  clearTimeout(pushTimer); pushTimer=setTimeout(push,40);
+}
+function push(){
+  if(!HAS_SERVER) return;
+  fetch('/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(publicState())})
+    .then(function(r){ setSrv(r.ok); })
+    .catch(function(){ setSrv(false); });
+}
+function setSrv(ok){
+  var was=srvOK; srvOK=ok;
+  if(ok&&!was) push();
+  paintOutput();
+}
+function pollHealth(){
+  fetch('/api/health').then(function(r){ return r.json(); })
+    .then(function(h){ health=h; setSrv(true); })
+    .catch(function(){ health=null; setSrv(false); });
+}
+function toggleGraphic(){
+  S.overlay.show=!S.overlay.show; paintOutput(); save();
+}
+function copyText(btn){
+  var el=document.getElementById(btn.dataset.src), t=el.textContent;
+  function fallback(){
+    var r=document.createRange(); r.selectNodeContents(el);
+    var s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  try{ navigator.clipboard.writeText(t).catch(fallback); }catch(e){ fallback(); }
+  var old=btn.textContent; btn.textContent='คัดลอกแล้ว';
+  setTimeout(function(){ btn.textContent=old; },1500);
+}
+function paintOutput(){
+  var base=HAS_SERVER?location.origin:'';
+  $('#uObs').textContent=base?base+'/overlay':'-';
+  $('#uBoard').textContent=base?base+'/board':'-';
+  $('#uVmix').textContent=base?base+'/overlay':'-';
+  $('#uXml').textContent=base?base+'/state.xml':'-';
+  $('#uDisplay').textContent=base?base+'/display':'-';
+  var dot=$('#srvDot'), tx=$('#srvText');
+  if(!HAS_SERVER){
+    dot.className='dot bad';
+    tx.textContent='เปิดแบบไฟล์เดี่ยว ส่งสัญญาณไม่ได้ ต้องเปิดผ่านโปรแกรมเซิร์ฟเวอร์ (start.bat)';
+  } else if(srvOK){
+    dot.className='dot ok';
+    var c=health?health.clients:{overlay:0,display:0};
+    tx.textContent='เชื่อมต่อเซิร์ฟเวอร์แล้ว · OBS/vMix เปิดอยู่ '+c.overlay+' · มอนิเตอร์ '+c.display;
+  } else {
+    dot.className='dot bad';
+    tx.textContent='ติดต่อเซิร์ฟเวอร์ไม่ได้ ตรวจว่าโปรแกรมยังเปิดอยู่';
+  }
+  var lan=$('#uLan');
+  if(health&&health.lan&&health.lan.length) lan.textContent='เครื่องอื่นในเครือข่ายเดียวกัน: '+health.lan.map(function(ip){return 'http://'+ip+':'+health.port+'/display';}).join(' · ');
+  else lan.textContent='';
+  var vm=$('#vmixText');
+  if(!HAS_SERVER) vm.textContent='';
+  else if(health&&health.vmix&&health.vmix.enabled){
+    if(health.vmix.ok===true) vm.textContent='vMix API: เชื่อมต่อแล้ว ส่งข้อความเข้าอินพุต "'+health.vmix.input+'"';
+    else if(health.vmix.ok===false) vm.textContent='vMix API: ส่งไม่ได้ ('+health.vmix.error+') ตรวจว่า vMix เปิดอยู่และเปิด Web Controller';
+    else vm.textContent='vMix API: รอส่งข้อมูลครั้งแรก';
+  } else vm.textContent='vMix API ปิดอยู่ เปิดได้ใน config.json ถ้าต้องการให้ส่งข้อความเข้าไตเติลของ vMix โดยตรง';
+  var ob=$('#ovBtn');
+  ob.textContent=S.overlay.show?'กราฟิกกำลังแสดงบนภาพ · กดเพื่อซ่อน (G)':'กราฟิกถูกซ่อน · กดเพื่อแสดง (G)';
+  ob.className='btn'+(S.overlay.show?' on-air':'');
+}
+document.addEventListener('change',function(e){
+  var id=e.target.id;
+  if(id==='ovShot') S.overlay.shot=e.target.checked;
+  else if(id==='ovFouls') S.overlay.fouls=e.target.checked;
+  else if(id==='ovBanner') S.overlay.banner=e.target.checked;
+  else return;
+  save();
+});
+function initOutput(){
+  paintOutput();
+  if(!HAS_SERVER) return;
+  pollHealth();
+  setInterval(pollHealth,3000);
+  setInterval(function(){ if(S.running) push(); },2000);
+  window.addEventListener('pagehide',function(){
+    try{
+      var o=publicState(); o.running=false;
+      navigator.sendBeacon('/state',new Blob([JSON.stringify(o)],{type:'application/json'}));
+    }catch(e){}
+  });
+}
+
+/* ---------- เริ่มต้น ---------- */
+build(); syncInputs(); update();
+initOutput();
+setInterval(tick,100);
+try{
+  new IntersectionObserver(function(en){
+    $('#mini').classList.toggle('show',!en[0].isIntersecting);
+  }).observe($('#clockPanel'));
+}catch(e){}
+})();
+</script>
+</body>
+</html>

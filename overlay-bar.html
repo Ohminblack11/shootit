@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>โอเวอร์เลย์สกอร์ 3x3</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@500;600;700&display=swap">
+<style>
+/* พื้นหลังโปร่งใสสำหรับ OBS / vMix
+   พารามิเตอร์ใน URL: ?pos=bottom (วางล่าง)  ?scale=1.2 (ขยาย)  ?bg=%23336699 (สีพื้นหลังไว้ทดสอบในเบราว์เซอร์) */
+:root{
+  --bar:rgba(10,13,15,.94); --ink:#f1f4f5; --mute:#a9b4bb; --line:rgba(255,255,255,.16);
+  --led:#ffb020; --alert:#ff5a44; --good:#4cc38a; --info:#7aa7ff; --ball:#e8590c;
+  --display:'Big Shoulders Display','Impact','Arial Narrow',sans-serif;
+  --body:'IBM Plex Sans Thai','Noto Sans Thai','Sarabun',system-ui,sans-serif;
+  --mono:'Chakra Petch','IBM Plex Sans Thai',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html{font-size:24px}
+html,body{margin:0;height:100%;overflow:hidden;background:transparent}
+body{font:600 1rem/1.2 var(--body);color:var(--ink)}
+#stage{
+  position:absolute;left:50%;transform:translateX(-50%);display:grid;gap:.5rem;
+  transition:opacity .35s ease,transform .35s ease;
+}
+body.pos-top #stage{top:1.6rem}
+body.pos-bottom #stage{bottom:1.6rem;align-content:end}
+body.pos-bottom .alert{order:-1}
+#stage.off{opacity:0;transform:translate(-50%,-1.2rem)}
+body.pos-bottom #stage.off{transform:translate(-50%,1.2rem)}
+
+.bug{
+  display:flex;align-items:stretch;background:var(--bar);border-radius:.6rem;overflow:hidden;
+  box-shadow:0 .4rem 1.4rem rgba(0,0,0,.4);
+}
+.side{display:flex;align-items:stretch;min-width:21rem}
+.side.b{flex-direction:row-reverse}
+.stripe{width:.7rem;background:var(--c)}
+.name{padding:.55rem 1rem;display:grid;align-content:center;gap:.25rem;flex:1;min-width:0}
+.side.b .name{text-align:right;justify-items:end}
+.tn{font:700 1.5rem/1.1 var(--body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:13rem}
+.meta{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:var(--mute);white-space:nowrap}
+.side.b .meta{flex-direction:row-reverse}
+.ball{
+  width:.95rem;height:.95rem;border-radius:50%;flex:none;
+  background:
+    linear-gradient(#3a1a08,#3a1a08) center/100% 2px no-repeat,
+    linear-gradient(#3a1a08,#3a1a08) center/2px 100% no-repeat,
+    var(--ball);
+  box-shadow:0 0 0 2px rgba(255,255,255,.18);
+}
+.chip{font-size:.72rem;padding:.08rem .5rem;border-radius:99px;font-weight:700;background:var(--led);color:#1a1200}
+.chip.max{background:var(--alert);color:#1b0a08}
+.to{width:.7rem;height:.7rem;border-radius:50%;border:2px solid var(--mute);flex:none}
+.to.used{background:var(--mute)}
+.score{
+  font:900 3.7rem/1 var(--display);min-width:4.2rem;padding:0 1rem;display:grid;place-items:center;
+  background:var(--c);color:#fff;font-variant-numeric:tabular-nums;
+}
+.mid{
+  display:grid;align-content:center;justify-items:center;gap:.15rem;min-width:11.5rem;padding:.4rem 1.1rem;
+  border-left:1px solid var(--line);border-right:1px solid var(--line);
+}
+.g{font:700 2.7rem/1 var(--mono);color:var(--led);font-variant-numeric:tabular-nums}
+.s{font:700 1.35rem/1 var(--mono);color:var(--led);font-variant-numeric:tabular-nums}
+.s.low{color:var(--alert)}
+.s.zero{color:var(--alert);animation:blink .6s steps(2) infinite}
+.ph{font-size:.75rem;color:var(--mute);letter-spacing:.04em}
+.toc{font:700 .95rem/1 var(--mono);color:var(--led)}
+@keyframes blink{50%{opacity:.25}}
+
+.alert{
+  display:grid;gap:.15rem;background:var(--bar);border-radius:.6rem;padding:.65rem 1.2rem;
+  border-left:.5rem solid var(--led);box-shadow:0 .4rem 1.4rem rgba(0,0,0,.4);
+  animation:pop .3s ease;
+}
+.alert[hidden]{display:none}
+.alert.high{border-left-color:var(--alert)}
+.alert.final{border-left-color:var(--good)}
+.alert.info{border-left-color:var(--info)}
+.alert .t{font:700 1.25rem/1.2 var(--body)}
+.alert .x{font:500 1rem/1.3 var(--body);color:var(--mute)}
+@keyframes pop{from{opacity:0;transform:translateY(-.4rem)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.alert,.s.zero{animation:none}}
+</style>
+</head>
+<body class="pos-top">
+<div id="stage" class="off">
+  <div class="bug">
+    <div class="side a" id="sideA">
+      <div class="stripe"></div>
+      <div class="name"><div class="tn" id="nA">ทีม A</div><div class="meta" id="mA"></div></div>
+      <div class="score" id="sA">0</div>
+    </div>
+    <div class="mid">
+      <div class="g" id="g">10:00</div>
+      <div class="s" id="s">12</div>
+      <div class="ph" id="ph"></div>
+      <div class="toc" id="toc" hidden></div>
+    </div>
+    <div class="side b" id="sideB">
+      <div class="stripe"></div>
+      <div class="name"><div class="tn" id="nB">ทีม B</div><div class="meta" id="mB"></div></div>
+      <div class="score" id="sB">0</div>
+    </div>
+  </div>
+  <div class="alert" id="alert" hidden><div class="t" id="aT"></div><div class="x" id="aX"></div></div>
+</div>
+
+<script>
+(function(){
+'use strict';
+var q=new URLSearchParams(location.search);
+var scale=parseFloat(q.get('scale'))||1;
+document.body.className='pos-'+(q.get('pos')==='bottom'?'bottom':'top');
+if(q.get('bg')) document.body.style.background=q.get('bg');
+function fit(){ document.documentElement.style.fontSize=(window.innerWidth/80*scale)+'px'; }
+fit(); window.addEventListener('resize',fit);
+
+function $(id){return document.getElementById(id);}
+function pad2(n){return (n<10?'0':'')+n;}
+function fmtGame(ms){
+  if(ms>=60000){var s=Math.ceil(ms/1000);return pad2(Math.floor(s/60))+':'+pad2(s%60);}
+  return (Math.floor(ms/100)/10).toFixed(1);
+}
+function fmtShot(ms){return ms>5000?String(Math.ceil(ms/1000)):(Math.floor(ms/100)/10).toFixed(1);}
+function setText(el,t){ if(el.textContent!==t) el.textContent=t; }
+
+var st=null, recv=0, metaKey=['',''];
+function renderMeta(i,t,opts){
+  var el=$(i?'mB':'mA'), parts=[];
+  var key=JSON.stringify([st.poss===i,t.fouls,t.timeout,opts.fouls]);
+  if(metaKey[i]===key) return; metaKey[i]=key;
+  el.textContent='';
+  function add(node){ el.appendChild(node); }
+  if(st.poss===i){ var b=document.createElement('i'); b.className='ball'; b.title='ครองบอล'; add(b); }
+  if(opts.fouls){
+    var f=document.createElement('span'); f.textContent='ฟาวล์ '+t.fouls; add(f);
+    if(t.fouls>=7){
+      var c=document.createElement('span'); c.className='chip'+(t.fouls>=10?' max':'');
+      c.textContent=t.fouls>=10?'โบนัส+บอล':'โบนัส'; add(c);
+    }
+  }
+  var o=document.createElement('i'); o.className='to'+(t.timeout?' used':''); o.title='เวลานอก'; add(o);
+}
+function render(){
+  if(!st) return;
+  var el=performance.now()-recv, opts=st.overlay||{show:true,shot:true,fouls:true,banner:true};
+  $('stage').classList.toggle('off',opts.show===false);
+  var A=st.teams[0], B=st.teams[1];
+  $('sideA').style.setProperty('--c',A.color); $('sideB').style.setProperty('--c',B.color);
+  setText($('nA'),A.name); setText($('nB'),B.name);
+  setText($('sA'),String(A.score)); setText($('sB'),String(B.score));
+  renderMeta(0,A,opts); renderMeta(1,B,opts);
+  var g=st.gameMs, s=st.shotMs;
+  if(st.running){ if(st.phase==='regulation') g=Math.max(0,g-el); s=Math.max(0,s-el); }
+  setText($('g'),st.phase==='overtime'?'OT':fmtGame(g));
+  var sv=$('s'); sv.hidden=(opts.shot===false);
+  setText(sv,fmtShot(s)); sv.className='s'+(s<=0?' zero':(s<=5000?' low':''));
+  var ph={tied:'เสมอ · รอต่อเวลา',overtime:'ต่อเวลา · ถึง '+st.target+' ชนะ',final:'จบเกม'}[st.phase]||'';
+  setText($('ph'),ph); $('ph').hidden=!ph;
+  var toc=$('toc');
+  if(st.timeout){
+    var ms=st.timeout.ms-el;
+    if(ms>0){ toc.hidden=false; setText(toc,'เวลานอก '+st.teams[st.timeout.team].name+' '+Math.ceil(ms/1000)); } else toc.hidden=true;
+  } else toc.hidden=true;
+  var al=$('alert'), bn=st.banner;
+  if(bn&&opts.banner!==false){
+    al.hidden=false; al.className='alert '+(bn.kind==='foul'&&bn.high?'high':bn.kind||'');
+    setText($('aT'),bn.title); setText($('aX'),bn.text||''); $('aX').hidden=!bn.text;
+  } else al.hidden=true;
+}
+
+function connect(){
+  var es=new EventSource('/events?role=overlay');
+  es.onmessage=function(e){ try{ st=JSON.parse(e.data); recv=performance.now(); render(); }catch(_){} };
+}
+connect();
+setInterval(render,100);
+})();
+</script>
+</body>
+</html>
